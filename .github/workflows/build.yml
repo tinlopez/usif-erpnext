@@ -1,0 +1,55 @@
+name: Build ERPNext image
+
+# Builds ERPNext + the apps listed in apps.json and pushes it to GHCR.
+# Runs when apps.json or this file changes, or by hand (Actions tab -> Run workflow).
+on:
+  push:
+    branches: [main]
+    paths: [apps.json, .github/workflows/build.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  FRAPPE_BRANCH: version-16
+  IMAGE: ghcr.io/${{ github.repository_owner }}/usif-erpnext
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get frappe_docker (official build recipe)
+        uses: actions/checkout@v4
+        with:
+          repository: frappe/frappe_docker
+          path: frappe_docker
+
+      - name: Image name in lowercase
+        run: echo "IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: frappe_docker
+          file: frappe_docker/images/layered/Containerfile
+          build-args: |
+            FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
+          secret-files: |
+            apps_json=apps.json
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:v16
+            ${{ env.IMAGE }}:v16-${{ github.run_number }}
